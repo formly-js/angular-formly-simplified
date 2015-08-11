@@ -1,3 +1,169 @@
+// for now, requires lodash 3.10
+//
+//
+// Usage:
+//
+//  ... in factory/service/wherever
+//
+//  AngularFormlySimplified.defineFields({
+//    fields:{
+//      text:{
+//        template: '<input class="form-control" ng-model="model[options.key]">',
+//        templateOptions:{
+//          type:'text'
+//        }
+//      },
+//      textarea:{
+//        template: '<textarea class="form-control" ng-model="model[options.key]"></textarea>'
+//      },
+//      number:{
+//        defaults:['text'],
+//        templateOptions:{
+//          type:'number'
+//        }
+//      },
+//      email:{
+//        defaults:['text'],
+//        templateOptions: {
+//          label: 'Email',
+//          type: 'email',
+//          maxlength: 20,
+//          minlength: 4,
+//          placeholder: 'example@example.com'
+//        }
+//      },
+//      submitButton:{
+//        template:'<button type="submit" ng-disabled="form.$invalid" class="btn btn-success">{{to.text}}</button>',
+//        templateOptions:{text:'Submit'}
+//      },
+//      otherButton:{
+//        template:'<button type="button" class="btn btn-success">{{to.text}}</button>',
+//        templateOptions:{text:'DoSomething'}
+//      },
+//    }
+//  });
+//
+//  .. define validators somewhere else
+//  AngularFormlySimplified.defineFields({
+//    fields:{
+//      'validators.required':{
+//        templateOptions:{
+//          required:true
+//        }
+//      }
+//    }
+//  });
+//
+//  .. define fields specific to your models somewhere else
+//  AngularFormlySimplified.defineFields({
+//    fields:{
+//      'dog.bark':{
+//        defaults:['otherButton'],
+//        templateOptions:{
+//          onClick:function(){
+//            console.log('woof');
+//          }
+//        }
+//      },
+//      'dog.name':{
+//        defaults:['text','validators.required']
+//      },
+//      'dog.color':{
+//        defaults:['text']
+//      },
+//      'dog.runAwayButton':{
+//        defaults:['submitButton'],
+//        templateOptions:{
+//          text:'Flee!'
+//        }
+//      }
+//    }
+//  });
+//
+//
+//
+//
+//
+//
+//
+//
+//  .. in controller (models)
+//  var model = {
+//    save:function(){var dfd = $q.defer();dfd.resolve();return dfd.promise;}
+//  };
+//
+//  $scope.model = model;
+//
+//  ..or.. (supports limited models arrays by default)
+//
+//  $scope.model = [
+//    angular.copy(model),
+//    angular.copy(model)
+//  ];
+//
+//
+//  .. in controller (fields)
+//
+//  $scope.fields = AngularFormlySimplified.getFields(
+//    'dog.name',
+//    'dog.color',
+//    'dog.bark',
+//    'dog.runAwayButton'
+//  );
+//
+//  ..or..
+//
+//  $scope.fields = AngularFormlySimplified.getFields(
+//    {template:'<div>Foo</div>'},
+//    'dog.name',
+//    {template:'<div>Bar</div>'},
+//    'dog.runAwayButton'
+//  );
+//
+//  ..or..
+//
+//  $scope.fields = AngularFormlySimplified.getFields({
+//    fields:['dog.name','dog.color',{defaults:['text']}],
+//    defaults:[
+//      'validators.required'
+//    ],
+//    mixins:[
+//      {wrapper:'<div>wrapped-><formly-transclude></formly-transclude><-wrapped</div>'}
+//    ],
+//  });
+//
+//  ..or..
+//
+//  $scope.fields = AngularFormlySimplified.getFields(
+//    {mixins:['email'],templateOptions:{required:true}}
+//  );
+//
+//  ..same as..
+//  $scope.fields = AngularFormlySimplified.getFields(
+//    {mixins:['email','validators.required']}
+//  );
+//
+//
+//
+//
+//
+//
+//  .. in HTML
+//
+//  <at-form fields="fields" model="model"></at-form>
+//
+//
+//  tbd:
+//    - actually put some thought into models arrays support
+//      (unless formly has it by the time we need it)
+//    - decide how to mix in functions like controller, onChange, and link
+//
+
+
+_.mixin({ensureArray:function(arg){ // lodash helper
+  return arg === undefined ? [] : (_.isArray(arg) ? arg : [arg]);
+}});
+
 angular.module('angular-formly-simplified',['formly'])
 .factory('AngularFormlySimplified',function (formlyConfig) {
   var AngularFormlySimplified = {};
@@ -5,9 +171,6 @@ angular.module('angular-formly-simplified',['formly'])
   formlyConfig.extras.explicitAsync = true;
 
   var fieldsHash = {};
-  // AngularFormlySimplified.defineFields
-  // examples:
-  //
   AngularFormlySimplified.defineFields = function (options) {
     if(!_.isPlainObject(options.fields)){throw new Error('defineFields requires {fields:{}}');}
 
@@ -43,28 +206,7 @@ angular.module('angular-formly-simplified',['formly'])
     });
   };
 
-  // AngularFormlySimplified.getFields
-  // examples:
-  //    AngularFormlySimplified.getFields('field1','field2','field3');
-  //
-  //    AngularFormlySimplified.getFields(
-  //      {template:'<div>Foo</div>'},
-  //      'field2',
-  //      {template:'<div>Bar</div>'}
-  //    );
-  //
-  //    AngularFormlySimplified.getFields({
-  //      fields:['field1','field2','field3'],
-  //      defaults:[
-  //        'field4',
-  //        'field5'
-  //      ],
-  //      mixins:[
-  //        'fieldWithWrapper1',
-  //        {wrapper:'<div><formly-transclude></formly-transclude></div>'}
-  //      ],
-  //    });
-  //
+
   AngularFormlySimplified.getFields = function(options){
     var opts = options && options.fields ? options : {fields:arguments};
     return _.map(opts.fields,function (arg) {
