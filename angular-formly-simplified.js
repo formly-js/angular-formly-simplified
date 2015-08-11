@@ -157,7 +157,8 @@
 //    - actually put some thought into models arrays support
 //      (unless formly has it by the time we need it)
 //    - decide how to mix in functions like controller, onChange, and link
-//
+//    - consider named child fields in templates, similar to named views in ui-router
+//      e.g., {template:'<tpl field="to.subs.a"></tpl>stuff<tpl field="to.subs.b"></tpl>'}
 
 
 _.mixin({ensureArray:function(arg){ // lodash helper
@@ -296,9 +297,6 @@ angular.module('angular-formly-simplified',['formly'])
       };
 
       $scope.submitForm = function (event) {
-        /*eslint-disable*/
-        debugger;
-        /*eslint-enable*/
         if($scope.attendForm.$invalid){
           return event.preventDefault();
         }
