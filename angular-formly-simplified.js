@@ -1,172 +1,9 @@
-// for now, requires lodash 3.10
-//
-//
-// Usage:
-//
-//  ... in factory/service/wherever
-//
-//  AngularFormlySimplified.defineFields({
-//    fields:{
-//      text:{
-//        template: '<input class="form-control" ng-model="model[options.key]">',
-//        templateOptions:{
-//          type:'text'
-//        }
-//      },
-//      textarea:{
-//        template: '<textarea class="form-control" ng-model="model[options.key]"></textarea>'
-//      },
-//      number:{
-//        defaults:['text'],
-//        templateOptions:{
-//          type:'number'
-//        }
-//      },
-//      email:{
-//        defaults:['text'],
-//        templateOptions: {
-//          label: 'Email',
-//          type: 'email',
-//          maxlength: 20,
-//          minlength: 4,
-//          placeholder: 'example@example.com'
-//        }
-//      },
-//      submitButton:{
-//        template:'<button type="submit" ng-disabled="form.$invalid" class="btn btn-success">{{to.text}}</button>',
-//        templateOptions:{text:'Submit'}
-//      },
-//      otherButton:{
-//        template:'<button type="button" class="btn btn-success">{{to.text}}</button>',
-//        templateOptions:{text:'DoSomething'}
-//      },
-//    }
-//  });
-//
-//  .. define validators somewhere else
-//  AngularFormlySimplified.defineFields({
-//    fields:{
-//      'validators.required':{
-//        templateOptions:{
-//          required:true
-//        }
-//      }
-//    }
-//  });
-//
-//  .. define fields specific to your models somewhere else
-//  AngularFormlySimplified.defineFields({
-//    fields:{
-//      'dog.bark':{
-//        defaults:['otherButton'],
-//        templateOptions:{
-//          onClick:function(){
-//            console.log('woof');
-//          }
-//        }
-//      },
-//      'dog.name':{
-//        defaults:['text','validators.required']
-//      },
-//      'dog.color':{
-//        defaults:['text']
-//      },
-//      'dog.runAwayButton':{
-//        defaults:['submitButton'],
-//        templateOptions:{
-//          text:'Flee!'
-//        }
-//      }
-//    }
-//  });
-//
-//
-//
-//
-//
-//
-//
-//
-//  .. in controller (models)
-//  var model = {
-//    save:function(){var dfd = $q.defer();dfd.resolve();return dfd.promise;}
-//  };
-//
-//  $scope.model = model;
-//
-//  ..or.. (supports limited models arrays by default)
-//
-//  $scope.model = [
-//    angular.copy(model),
-//    angular.copy(model)
-//  ];
-//
-//
-//  .. in controller (fields)
-//
-//  $scope.fields = AngularFormlySimplified.getFields(
-//    'dog.name',
-//    'dog.color',
-//    'dog.bark',
-//    'dog.runAwayButton'
-//  );
-//
-//  ..or..
-//
-//  $scope.fields = AngularFormlySimplified.getFields(
-//    {template:'<div>Foo</div>'},
-//    'dog.name',
-//    {template:'<div>Bar</div>'},
-//    'dog.runAwayButton'
-//  );
-//
-//  ..or..
-//
-//  $scope.fields = AngularFormlySimplified.getFields({
-//    fields:['dog.name','dog.color',{defaults:['text']}],
-//    defaults:[
-//      'validators.required'
-//    ],
-//    mixins:[
-//      {wrapper:'<div>wrapped-><formly-transclude></formly-transclude><-wrapped</div>'}
-//    ],
-//  });
-//
-//  ..or..
-//
-//  $scope.fields = AngularFormlySimplified.getFields(
-//    {mixins:['email'],templateOptions:{required:true}}
-//  );
-//
-//  ..same as..
-//  $scope.fields = AngularFormlySimplified.getFields(
-//    {mixins:['email','validators.required']}
-//  );
-//
-//
-//
-//
-//
-//
-//  .. in HTML
-//
-//  <at-form fields="fields" model="model"></at-form>
-//
-//
-//  tbd:
-//    - actually put some thought into models arrays support
-//      (unless formly has it by the time we need it)
-//    - decide how to mix in functions like controller, onChange, and link
-//    - consider named child fields in templates, similar to named views in ui-router
-//      e.g., {template:'<tpl field="to.subs.a"></tpl>stuff<tpl field="to.subs.b"></tpl>'}
-
-
 _.mixin({ensureArray:function(arg){ // lodash helper
   return arg === undefined ? [] : (_.isArray(arg) ? arg : [arg]);
 }});
 
 angular.module('angular-formly-simplified',['formly'])
-.factory('AngularFormlySimplified',function (formlyConfig) {
+.factory('AngularFormlySimplified',function (formlyConfig,Helpers) {
   var AngularFormlySimplified = {};
   formlyConfig.extras.errorExistsAndShouldBeVisibleExpression = '!options.formControl.$valid && (options.formControl.$dirty||options.formControl.$touched)';
   formlyConfig.extras.explicitAsync = true;
@@ -194,9 +31,6 @@ angular.module('angular-formly-simplified',['formly'])
 
   };
 
-
-  // I'd like to see fields just be able to wrap other fields.  Using wrappers
-  // for now since they work.
   var wrappersHash = {};
   AngularFormlySimplified.defineWrappers = function (wrapperHash) {
     _.forIn(wrapperHash,function (wrapperObj,key) {
@@ -207,23 +41,36 @@ angular.module('angular-formly-simplified',['formly'])
     });
   };
 
-
-  AngularFormlySimplified.getFields = function(options){
-    var opts = options && options.fields ? options : {fields:arguments};
-    return _.map(opts.fields,function (arg) {
-      var toMix;
-      if(typeof arg === 'string'){
-        toMix = _.cloneDeep(fieldsHash[arg]);
-      } else {
-        toMix = arg;
-        moveInvalidPropertiesToData(toMix);
+  AngularFormlySimplified.getFields = function(){
+    if (_.isArray(arguments[0])){
+      var fields = arguments[0];
+      var retFields = [];
+      for (var i = 0,L = fields.length; i < L; i++){
+        var toMix;
+        if(typeof fields[i] === 'string'){
+          toMix = _.cloneDeep(fieldsHash[fields[i]]);
+        } else {
+          toMix = fields[i];
+          moveInvalidPropertiesToData(toMix);
+        }
+        if(toMix.data && toMix.data.aliasFor){
+          retFields.push.apply(retFields,AngularFormlySimplified.getFields(toMix.data.aliasFor));
+        } else {
+          // inherit from defaults and mixins
+          _.defaultsDeep.apply(null, getDeps(toMix, toMix.data.defaults.concat(_.ensureArray(fields[i].defaults))));
+          _.merge.apply(null, getDeps(toMix, toMix.data.mixins.concat(_.ensureArray(fields[i].mixins))));
+          retFields.push(toMix);
+        }
       }
-      // inherit from defaults and mixins
-      _.defaultsDeep.apply(null, getDeps(toMix, toMix.data.defaults.concat(_.ensureArray(opts.defaults))));
-      _.merge.apply(null, getDeps(toMix, toMix.data.mixins.concat(_.ensureArray(opts.mixins))));
-      return toMix;
-    });
-
+      return retFields;
+    }
+    if(arguments.length > 1){
+      return AngularFormlySimplified.getFields({fields:Array.prototype.slice.call(arguments)});
+    }
+    if(typeof arguments[0] === 'string'){
+      return AngularFormlySimplified.getFields(Array.prototype.slice.call(arguments));
+    }
+    throw new Error('unsupported argument to getFields: ' + arguments[0]);
   };
 
   return AngularFormlySimplified;
@@ -261,60 +108,147 @@ angular.module('angular-formly-simplified',['formly'])
     return mergeOutputArray;
   }
 })
-
-
-.directive('atForm', ['$q',function($q) {
+.directive('atForm',function () {
   return {
-    restrict: 'E',
-    template: '<form name="attendForm" ng-submit="submitForm($event);" novalidate>' +
-      '<div ng-if="modelsArray.length">' +
-        '<div ng-repeat="mdl in modelsArray track by $index" ng-init="fieldsArrays[$index] = copyFields(mdl);">' +
-          '<formly-form model="mdl" fields="fieldsArrays[$index]"></formly-form>' +
-        '</div>' +
-      '</div>' +
+    template:'' +
+    '<form class="clear" name="attendForm" ng-submit="$broadcast(\'parentFormSubmission\',$event);" novalidate>' +
+      '<subform fields="fields" model="model" form="attendForm"></subform>' +
     '</form>',
     scope:{
       fields:'=',
       model:'='
-    },
-    controller:function ($scope) {
+    }
+  };
+})
+.directive('subform', ['$q','$compile', 'AngularFormlySimplified',function($q, $compile,AngularFormlySimplified) {
 
-      $scope.fieldsArrays = [];
-      $scope.modelsArray = _.ensureArray($scope.model);
+  var compiledSubtpl = $compile('<div class="clear"><formly-form model="model" fields="fields"></formly-form></div>');
+  var parentFns = {};
 
-      $scope.copyFields = function (model) {
-        return $scope.fields.map(function (field) {
-          var newField = _.transform(field,function(result,val,key){
-            if(key === 'model'){
-              result.model = model;
-              return result;
-            }
-            result[key] = _.cloneDeep(val);
-            return result;
-          });
-          return newField;
-        });
-      };
+  return {
+    restrict: 'E',
+    require:'^form',
+    // scope:true,
+    link:function (scope,iElem,iAttrs,formControl) {
+      var modelsToSave = [];
+      // $scope.formState;
 
-      $scope.submitForm = function (event) {
-        if($scope.attendForm.$invalid){
+      // scope.fields = AngularFormlySimplified.getFields(scope.parentFields);
+
+      scope.$watch('model',function (newVal,oldVal,scope) {
+        if(newVal){
+          // debugger;
+          compileFields(scope.$parent, iElem, newVal, scope.fields);
+        }
+      });
+
+      scope.$on('parentFormSubmission',function (e,$event) {
+        if(scope.form.$invalid){
           return event.preventDefault();
         }
 
-        // publish an event controllers can listen for
-        $scope.$emit('atFormsubmission.start');
-        return $q.all($scope.modelsArray.map(function (model) {
+        scope.$emit('atFormsubmission.start');
+        return $q.all(modelsToSave.map(function (model) {
           return model.save();
         }))
         .then(function () {
-          $scope.$emit('atFormsubmission.success');
+          scope.$emit('atFormsubmission.success');
         })
-        .catch(function () {
-          $scope.$emit('atFormsubmission.error');
+        .catch(function (err) {
+          scope.$emit('atFormsubmission.error',err);
         });
-      };
+      });
+
+      scope.$on('modelsToSave',function (event,modelsArray) {
+        event.preventDefault();
+        modelsArray.forEach(function (model) {
+          if(!_.includes(modelsToSave,model)){
+            modelsToSave.push(model);
+          }
+        });
+        console.log('modelsToSave',modelsArray);
+      });
+
+      var idx;
+      scope.$on('modelsToDestroy',function (event,modelsArray) {
+        event.preventDefault();
+        modelsArray.forEach(function (model) {
+          idx = modelsToSave.indexOf(model);
+          if(idx > -1){
+            modelsToSave.splice(idx,1);
+          }
+        });
+        console.log('modelsToDestroy',modelsArray);
+      });
     }
   };
+
+  function compileFields(scope, $el, model, fieldsObj) {
+    var modelsArray = _.ensureArray(model);
+    var fObj = _.isArray(fieldsObj) ? {fields:fieldsObj} : fieldsObj;
+
+    var children = [];
+    scope.$watchCollection(
+      function(){return modelsArray;},
+      function (newVal,oldVal,scope) {
+        console.log('newVal,oldVal',newVal,oldVal);
+
+        if(newVal){
+          if(fObj.preForm){
+            compileFields(scope, $el, model, {prepend:true,fields:fObj.preForm});
+          }
+
+          _.forEach(newVal,function (childModel,i) {
+            // if(_.isArray(model)){
+            var child = scope.$new(false,scope);
+            child.fields = [];
+            child.fields = AngularFormlySimplified.getFields(fObj.fields);
+            console.log('child.fields',child.fields);
+            child.model = childModel;
+            child.form = scope.form;
+            child.fns = scope.fns;
+            _.forEach(child.fields,function (fld) {
+              if(_.isArray(model)){
+                fld.data.parentCollection = model;
+              }
+              fld.model = childModel;
+            });
+
+            children.push(child);
+            var childEl = compiledSubtpl(child);
+
+            // recursively create subModels/fields in field.data.subModels
+            _.forEach(child.fields,function (cfld) {
+              if(!cfld.data || !cfld.data.subModels) {return;}
+              _.forIn(cfld.data.subModels,function (subFields,modelKey) {
+                if(child.model[modelKey]){
+                  compileFields(child, childEl, child.model[modelKey], {fields:subFields});
+                }
+              });
+            });
+
+            if(fObj.prepend){
+              $el.prepend(childEl);
+            } else {
+              $el.append(childEl);
+            }
+          });
+          if(fObj.afterForm){
+            compileFields(scope, $el, model, {fields:fObj.afterForm});
+          }
+          scope.$emit('modelsToSave',newVal);
+        }
+      }
+    );
+
+    scope.$on('$destroy',function () {
+      scope.$emit('modelsToDestroy',_.pluck(children,'model'));
+      _.forEach(children,function (child) {
+        child.$destroy();
+      });
+    });
+  }
+
 }])
 
 .directive('tpl', ['AngularFormlySimplified',function (AngularFormlySimplified) {
@@ -323,10 +257,11 @@ angular.module('angular-formly-simplified',['formly'])
     replace:true,
     scope:false,
     template:function (tElem,tAttrs) {
-      var field = AngularFormlySimplified.getFields(tAttrs.field)[0];
+      var field = AngularFormlySimplified.getFields([tAttrs.field])[0];
       if(field.template) {return "'" + field.template + "'";}
       if(field.templateUrl) {return '<div ng-include src="\'' + field.templateUrl + '\'"></div>';}
       throw new Error('field does not have a template or templateUrl');
     }
   };
 }]);
+
