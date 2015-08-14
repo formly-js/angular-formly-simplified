@@ -182,6 +182,37 @@
 //   }
 // },
 //
+//  model may be nested{foo:{bar:{baz:{}}}}
+  // fields will be flattened:
+  // [
+  //  {fields:[],model:foo}
+  //  {fields:[],model:foo.bar}
+  //  {fields:[],model:foo.bar.baz}
+  // ]
+  // children are inserted:
+  //
+  // {foo:{bar:{baz:{}}}}
+  // fields:[
+  // {
+  //    key:'foo',
+  //    data:{
+  //      subModels:{
+  //        bar:[{key:'name'},{key:'age'}],
+  //        'bar.baz':[{key:'name'},{key:'age'}] // this works too
+  //      }
+  //    }}
+  // ]
+  // fields will be flattened:
+  // [
+  //  {fields:[],model:foo}
+  //  {model:foo,key:'bar',fields:[{key:'name'},{key:'age'}]}
+  //  {model:foo,key:'bar',fields:[{key:'name'},{key:'age'}]}
+  //  {fields:[],model:foo}
+  //  {fields:[],model:foo.bar}
+  //  {fields:[],model:foo.bar.baz}
+  // ]
+//
+//
 //  .. in HTML
 //
 //  <at-form fields="fields" model="model"></at-form>
@@ -198,4 +229,6 @@
 //  done(ish).. needs review:
 //    - actually put some thought into models arrays support
 //      (mostly done I think)
+//      
+//      
 ```

@@ -1,9 +1,6 @@
-_.mixin({ensureArray:function(arg){ // lodash helper
-  return arg === undefined ? [] : (_.isArray(arg) ? arg : [arg]);
-}});
-
 angular.module('angular-formly-simplified',['formly'])
-.factory('AngularFormlySimplified',function (formlyConfig,Helpers) {
+.factory('AngularFormlySimplified',function (formlyConfig) {
+
   var AngularFormlySimplified = {};
   formlyConfig.extras.errorExistsAndShouldBeVisibleExpression = '!options.formControl.$valid && (options.formControl.$dirty||options.formControl.$touched)';
   formlyConfig.extras.explicitAsync = true;
@@ -17,15 +14,8 @@ angular.module('angular-formly-simplified',['formly'])
     _.forIn(options.fields,function(field,key){
       if(fieldsHash[key]){throw new Error('field ' + key + 'already defined as: ' + JSON.stringify(fieldsHash[key]) );}
       moveInvalidPropertiesToData(field);
-      if(!field.key && !field.model){
-        modelKeyArr = ('model.' + key).split('.');
-        field.key = modelKeyArr.pop();
-        if(modelKeyArr.length > 1){
-          field.model = modelKeyArr.join('.');
-        }
-        field.data.modelKey = field.key;
-        field.data.modelStr = field.model;
-      }
+      // set a default field key
+      field.key = field.key || key.split('.').slice(-1)[0];
       fieldsHash[key] = field;
     });
 
@@ -57,11 +47,13 @@ angular.module('angular-formly-simplified',['formly'])
           retFields.push.apply(retFields,AngularFormlySimplified.getFields(toMix.data.aliasFor));
         } else {
           // inherit from defaults and mixins
-          _.defaultsDeep.apply(null, getDeps(toMix, toMix.data.defaults.concat(_.ensureArray(fields[i].defaults))));
-          _.merge.apply(null, getDeps(toMix, toMix.data.mixins.concat(_.ensureArray(fields[i].mixins))));
+          _.defaultsDeep.apply(null, getDeps(toMix, toMix.data.defaults.concat(_.ensureArray(fields.defaults))));
+          _.merge.apply(null, getDeps(toMix, toMix.data.mixins.concat(_.ensureArray(fields.mixins))));
           retFields.push(toMix);
         }
       }
+      if(retFields.length === 1 && retFields[0].key === 'inlineError'){return retFields;}
+
       return retFields;
     }
     if(arguments.length > 1){
@@ -72,6 +64,10 @@ angular.module('angular-formly-simplified',['formly'])
     }
     throw new Error('unsupported argument to getFields: ' + arguments[0]);
   };
+
+  _.mixin({ensureArray:function(arg){
+    return arg === undefined ? [] : (_.isArray(arg) ? arg : [arg]);
+  }});
 
   return AngularFormlySimplified;
 
@@ -108,144 +104,147 @@ angular.module('angular-formly-simplified',['formly'])
     return mergeOutputArray;
   }
 })
-.directive('atForm',function () {
-  return {
-    template:'' +
-    '<form class="clear" name="attendForm" ng-submit="$broadcast(\'parentFormSubmission\',$event);" novalidate>' +
-      '<subform fields="fields" model="model" form="attendForm"></subform>' +
-    '</form>',
-    scope:{
-      fields:'=',
-      model:'='
-    }
-  };
-})
-.directive('subform', ['$q','$compile', 'AngularFormlySimplified',function($q, $compile,AngularFormlySimplified) {
+.directive('atForm',['$q','$compile', 'AngularFormlySimplified',function($q, $compile,AngularFormlySimplified) {
 
-  var compiledSubtpl = $compile('<div class="clear"><formly-form model="model" fields="fields"></formly-form></div>');
-  var parentFns = {};
+  var formlyTpl = $compile('<div class="clear formly-form-wrapper"><formly-form model="model" fields="fields"></formly-form></div>');
 
   return {
-    restrict: 'E',
-    require:'^form',
-    // scope:true,
-    link:function (scope,iElem,iAttrs,formControl) {
-      var modelsToSave = [];
-      // $scope.formState;
+    scope:true,
+    compile:function(tElem,tAttrs){
+      return {
+        post:function(scope,iElem,iAttrs){
+          scope.fields = AngularFormlySimplified.getFields(scope.$eval(tAttrs.fields));
+          // scope.model = scope.$eval(tAttrs.model);
+          scope.modelMirror = mapFieldsToModelStructure(scope.fields,tAttrs.model,[]);
+          scope.modelsToSave = {};
+          scope.afterFields = [];
+          var parentEl = angular.element('<form class="clear" name="attendForm" ng-submit="submitAtForm($event,attendForm);" novalidate></form>');
 
-      // scope.fields = AngularFormlySimplified.getFields(scope.parentFields);
+          var afterScope = scope.$new(false,scope);
+          afterScope.fields = scope.afterFields;
+          afterScope.model = {};
+          var afterForm = formlyTpl(afterScope);
 
-      scope.$watch('model',function (newVal,oldVal,scope) {
-        if(newVal){
-          // debugger;
-          compileFields(scope.$parent, iElem, newVal, scope.fields);
-        }
-      });
-
-      scope.$on('parentFormSubmission',function (e,$event) {
-        if(scope.form.$invalid){
-          return event.preventDefault();
-        }
-
-        scope.$emit('atFormsubmission.start');
-        return $q.all(modelsToSave.map(function (model) {
-          return model.save();
-        }))
-        .then(function () {
-          scope.$emit('atFormsubmission.success');
-        })
-        .catch(function (err) {
-          scope.$emit('atFormsubmission.error',err);
-        });
-      });
-
-      scope.$on('modelsToSave',function (event,modelsArray) {
-        event.preventDefault();
-        modelsArray.forEach(function (model) {
-          if(!_.includes(modelsToSave,model)){
-            modelsToSave.push(model);
-          }
-        });
-        console.log('modelsToSave',modelsArray);
-      });
-
-      var idx;
-      scope.$on('modelsToDestroy',function (event,modelsArray) {
-        event.preventDefault();
-        modelsArray.forEach(function (model) {
-          idx = modelsToSave.indexOf(model);
-          if(idx > -1){
-            modelsToSave.splice(idx,1);
-          }
-        });
-        console.log('modelsToDestroy',modelsArray);
-      });
-    }
-  };
-
-  function compileFields(scope, $el, model, fieldsObj) {
-    var modelsArray = _.ensureArray(model);
-    var fObj = _.isArray(fieldsObj) ? {fields:fieldsObj} : fieldsObj;
-
-    var children = [];
-    scope.$watchCollection(
-      function(){return modelsArray;},
-      function (newVal,oldVal,scope) {
-        console.log('newVal,oldVal',newVal,oldVal);
-
-        if(newVal){
-          if(fObj.preForm){
-            compileFields(scope, $el, model, {prepend:true,fields:fObj.preForm});
-          }
-
-          _.forEach(newVal,function (childModel,i) {
-            // if(_.isArray(model)){
-            var child = scope.$new(false,scope);
-            child.fields = [];
-            child.fields = AngularFormlySimplified.getFields(fObj.fields);
-            console.log('child.fields',child.fields);
-            child.model = childModel;
-            child.form = scope.form;
-            child.fns = scope.fns;
-            _.forEach(child.fields,function (fld) {
-              if(_.isArray(model)){
-                fld.data.parentCollection = model;
+          var formAppended = false;
+          // mapModelToMirrorToScope(scope, iElem, scope, scope.modelMirror, tAttrs.model, formlyTpl, scope.modelsToSave, scope.afterFields );
+          scope.$watchCollection(tAttrs.model,function (newVal) {
+            if(newVal){
+              mapModelToMirrorToScope(scope, parentEl, scope.$eval(tAttrs.model), scope.modelMirror[tAttrs.model], scope.modelsToSave, scope.afterFields );
+              if(formAppended === false){
+                formAppended = true;
+                iElem.append(parentEl);
+                iElem.append(afterForm);
               }
-              fld.model = childModel;
-            });
-
-            children.push(child);
-            var childEl = compiledSubtpl(child);
-
-            // recursively create subModels/fields in field.data.subModels
-            _.forEach(child.fields,function (cfld) {
-              if(!cfld.data || !cfld.data.subModels) {return;}
-              _.forIn(cfld.data.subModels,function (subFields,modelKey) {
-                if(child.model[modelKey]){
-                  compileFields(child, childEl, child.model[modelKey], {fields:subFields});
-                }
-              });
-            });
-
-            if(fObj.prepend){
-              $el.prepend(childEl);
-            } else {
-              $el.append(childEl);
             }
           });
-          if(fObj.afterForm){
-            compileFields(scope, $el, model, {fields:fObj.afterForm});
-          }
-          scope.$emit('modelsToSave',newVal);
-        }
-      }
-    );
 
-    scope.$on('$destroy',function () {
-      scope.$emit('modelsToDestroy',_.pluck(children,'model'));
-      _.forEach(children,function (child) {
-        child.$destroy();
+          scope.submitAtForm = function (e,form) {
+            if(form.$invalid){
+              return event.preventDefault();
+            }
+
+            scope.$emit('atFormsubmission.start');
+            return $q.all(_.values(scope.modelsToSave).map(function (model) {
+              return model.save();
+            }))
+            .then(function () {
+              scope.$emit('atFormsubmission.success');
+            })
+            .catch(function (err) {
+              scope.$emit('atFormsubmission.error',err);
+            });
+          };
+        }
+      };
+    }
+  };
+
+
+  function mapFieldsToModelStructure(fieldsArr,key,modelMirror){
+    modelMirror[key] = AngularFormlySimplified.getFields(fieldsArr);
+    modelMirror[key].$$subKeys = [];
+    modelMirror[key].forEach(function (fieldTemplate,i) {
+      _.forIn(fieldTemplate.data.subModelFields,function (subFields,subKey) {
+        modelMirror[key][subKey] = mapFieldsToModelStructure(subFields,subKey,modelMirror[key]);
+        modelMirror[key].$$subKeys.push(subKey);
       });
+    });
+    return modelMirror;
+  }
+  // model may be nested{foo:{bar:{baz:{}}}}
+  // fields will be flattened:
+  // [
+  //  {fields:[],model:foo}
+  //  {fields:[],model:foo.bar}
+  //  {fields:[],model:foo.bar.baz}
+  // ]
+  // children are inserted:
+  //
+  // {foo:{bar:{baz:{}}}}
+  // fields:[
+  // {
+  //    key:'foo',
+  //    data:{
+  //      subModels:{
+  //        bar:[{key:'name'},{key:'age'}],
+  //        'bar.baz':[{key:'name'},{key:'age'}] // this works too
+  //      }
+  //    }}
+  // ]
+  // fields will be flattened:
+  // [
+  //  {fields:[],model:foo}
+  //  {model:foo,key:'bar',fields:[{key:'name'},{key:'age'}]}
+  //  {model:foo,key:'bar',fields:[{key:'name'},{key:'age'}]}
+  //  {fields:[],model:foo}
+  //  {fields:[],model:foo.bar}
+  //  {fields:[],model:foo.bar.baz}
+  // ]
+
+
+  function mapModelToMirrorToScope(topScope,topEl,parentModelsArray,parentMirrorArray,modelsToSave,afterFields){
+
+    _.forEach(_.ensureArray(parentModelsArray),function (parentModel) {
+      if(parentModel && parentMirrorArray){
+        var child = topScope.$new(false,topScope);
+        child.model = parentModel;
+        modelsToSave[child.$id] = child.model;
+
+        child.$$originalFields = [];
+        parentMirrorArray.forEach(function (fieldTemplate) {
+          if(fieldTemplate.data.fieldPosition === null){return;}
+          var field = angular.copy(fieldTemplate);
+          (fieldTemplate.data.fieldPosition === 'after' ? afterFields : child.$$originalFields).push(field);
+        });
+
+        var childEl = formlyTpl(child);
+        var appended = false;
+        var off = child.$watch('model', function (newVal,oldVal) {
+          if(newVal){
+            if(!appended){
+              child.fields = child.$$originalFields.map(function (field) {
+                field.model = newVal;
+                return field;
+              });
+              topEl.append(childEl);
+            }
+          }
+        });
+
+        child.$on('$destroy',function(){
+          console.log('offing');
+          off();
+          delete child.fields;
+          delete child.model;
+          delete modelsToSave[child.$id];
+          childEl.remove();
+        });
+
+        // recurse through the model;
+        _.forEach(parentMirrorArray.$$subKeys,function (subKey) {
+          mapModelToMirrorToScope(topScope,topEl,parentModel[subKey],parentMirrorArray[subKey],modelsToSave,afterFields);
+        });
+      }
     });
   }
 
